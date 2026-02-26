@@ -1,0 +1,28 @@
+﻿cargo :     Checking zybertest-desktop v0.1.0 (C
+:\Users\USR-LPTP-81\Desktop\zybertest-desktop\sr
+c-tauri)
+At line:1 char:1
++ cargo check --message-format=short 2>&1 | 
+Out-File -FilePath check_sh ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   
+     Checking zy...ktop\src-tauri):String) [],  
+   RemoteException
+    + FullyQualifiedErrorId : NativeCommandErro 
+   r
+ 
+src\audio_capture.rs:5:44: warning: unused 
+import: `StreamTrait`
+src\wasapi_capture.rs:4:5: warning: unused 
+import: `windows::Win32::Foundation::*`
+src\audio_monitor.rs:17:33: warning: unused 
+import: `Source`
+src\delay_buffer.rs:30:29: error[E0502]: cannot 
+borrow `buffer` as immutable because it is also 
+borrowed as mutable: immutable borrow occurs 
+here
+warning: `zybertest-desktop` (lib) generated 3 
+warnings
+error: could not compile `zybertest-desktop` 
+(lib) due to 1 previous error; 3 warnings 
+emitted

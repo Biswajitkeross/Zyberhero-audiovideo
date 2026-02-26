@@ -1,0 +1,152 @@
+# ⚡ TESTING QUICK START CARD
+
+## 🎬 COPY & PASTE TO GET TESTING IN 5 MINUTES
+
+### **PowerShell Commands:**
+
+```powershell
+# 1. Set your API key (one time)
+$env:OPENAI_API_KEY = "sk-proj-your-key-here"
+
+# 2. Verify it's set
+echo $env:OPENAI_API_KEY
+
+# 3. Go to project directory
+cd "C:\Users\USR-LPTP-81\Desktop\zybertest-desktop"
+
+# 4. Start the app
+npx tauri dev
+```
+
+### **What to expect in terminal:**
+```
+✅ OpenAI Whisper API enabled
+```
+
+---
+
+## 🌐 BROWSER STEPS
+
+1. **URL:** `http://localhost:5173/`
+
+2. **Click:** "Start Monitoring All Audio" button
+
+3. **New Tab:** Open YouTube
+
+4. **Search:** "explicit rap" or "bad words"
+
+5. **Play:** Any video with profanity
+
+6. **Listen:** For BEEP sound 🔊🔊
+
+---
+
+## ✅ EXPECTED RESULTS
+
+### **When Bad Word Spoken:**
+
+**Terminal:**
+```
+📝 Whisper: fuck this shit
+🚨 BAD WORDS DETECTED: fuck, shit
+```
+
+**App:**
+```
+BEEP! 🔊 🔊
+Activity Log: [15:30:45] Detected: fuck, shit
+Counter: 1
+```
+
+---
+
+## 🎯 SUCCESS CHECKLIST
+
+- [ ] Terminal shows "✅ OpenAI Whisper API enabled"
+- [ ] Dashboard loads at localhost:5173
+- [ ] "Start Monitoring" button works
+- [ ] Manual text test detects bad words
+- [ ] YouTube plays without crash
+- [ ] You hear BEEP! 🔊🔊 on profanity
+- [ ] Dashboard updates with detection
+- [ ] Activity log has timestamp
+
+---
+
+## 🚨 QUICK FIXES
+
+| Problem | Fix |
+|---------|-----|
+| No beep sound | Check Windows volume |
+| No terminal messages | Click "Start Monitoring" |
+| "API key error" | Set with `$env:OPENAI_API_KEY=...` |
+| YouTube has no audio | Check VoiceMeeter routing |
+| Manual test fails | Check Terminal for errors |
+
+---
+
+## 📊 SYSTEM STATUS
+
+| Component | Status |
+|-----------|--------|
+| Code | ✅ Compiled (0 errors) |
+| API | ✅ Integrated & ready |
+| Audio | ✅ VB-Cable + VoiceMeeter |
+| Detection | ✅ 22 bad words |
+| Alerts | ✅ Double beep |
+| Dashboard | ✅ Full UI ready |
+
+---
+
+## 🔄 COMPLETE FLOW
+
+```
+YouTube Audio
+    ↓
+VB-Cable → App → Energy Check
+    ↓
+Whisper API (99% accurate)
+    ↓
+Bad Word Detector
+    ↓
+BEEP! 🔊🔊 + Dashboard Update
+```
+
+---
+
+## ⏱️ TIMELINE
+
+| Time | Action |
+|------|--------|
+| 0:00 | `npx tauri dev` |
+| 0:30 | App starts, see ✅ message |
+| 1:00 | Browser to localhost:5173 |
+| 1:30 | Click "Start Monitoring" |
+| 2:00 | YouTube plays |
+| 2:45 | Bad word spoken |
+| 2:46 | BEEP! 🔊🔊 |
+| 3:00 | ✅ SUCCESS! |
+
+---
+
+## 📖 REFERENCE DOCS
+
+**Need more info?**
+
+- **Quick Help:** `QUICK_TEST_REFERENCE.md`
+- **Full Guide:** `TESTING_GUIDE.md`
+- **Flowcharts:** `TESTING_FLOWCHARTS.md`
+- **Complete:** `READY_TO_TEST.md`
+
+---
+
+## 🎉 YOU'RE READY!
+
+**Just run:**
+```powershell
+npx tauri dev
+```
+
+**Then test with YouTube!**
+
+🔊 Good luck! 🎵

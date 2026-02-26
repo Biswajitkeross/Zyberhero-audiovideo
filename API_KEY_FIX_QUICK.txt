@@ -1,0 +1,132 @@
+# ⚡ QUICK FIX - API KEY NOT DETECTED
+
+## 🚨 Problem
+App shows: `⚠️  OPENAI_API_KEY not set. Speech recognition disabled.`
+
+## ✅ Solution (Try in This Order)
+
+### **FIX #1 - FASTEST (Try First)**
+
+1. **Close ALL PowerShell windows completely**
+   - Use Alt+F4 or X button
+   - Close EVERY PowerShell/Terminal window
+
+2. **Open a BRAND NEW PowerShell window**
+   - Right-click desktop → PowerShell
+   - OR Press Win+X → Terminal
+
+3. **Copy and paste this exactly:**
+```powershell
+$env:OPENAI_API_KEY = "sk-proj-YOUR-ACTUAL-KEY-HERE"
+cd "C:\Users\USR-LPTP-81\Desktop\zybertest-desktop"
+npx tauri dev
+```
+
+Replace `sk-proj-YOUR-ACTUAL-KEY-HERE` with your real API key!
+
+4. **Look for this message:**
+```
+✅ OpenAI Whisper API enabled
+```
+
+✅ **If you see this, it's FIXED!** Skip to testing below.
+
+---
+
+## ❌ Still not working?
+
+### **FIX #2 - PERMANENT (Most Reliable)**
+
+Set API key as **System Environment Variable** (works forever):
+
+1. **Press:** `Win + X`
+2. **Click:** `System`
+3. **Click:** `Advanced system settings` (left side)
+4. **Click:** `Environment Variables` (bottom right)
+5. **Click:** `New...` (under User variables)
+6. **Enter:**
+   - Name: `OPENAI_API_KEY`
+   - Value: `sk-proj-your-actual-key-here`
+7. **Click:** OK → OK → OK
+8. **Close all terminals and restart**
+9. **Open new terminal and run:**
+```powershell
+cd "C:\Users\USR-LPTP-81\Desktop\zybertest-desktop"
+npx tauri dev
+```
+
+✅ **Should now show:** `✅ OpenAI Whisper API enabled`
+
+---
+
+## 📋 Verify Your API Key is Correct
+
+1. Go to: https://platform.openai.com/api-keys
+2. Login
+3. Copy your key (full length)
+4. Should start with: `sk-proj-`
+5. If it's not there, create a new one!
+
+---
+
+## 🎯 One-Line Command (METHOD 3)
+
+Paste this single command:
+```powershell
+$env:OPENAI_API_KEY = "sk-proj-your-key"; npx tauri dev
+```
+
+---
+
+## ✅ How to Know It's Fixed
+
+### **Terminal shows:**
+```
+✅ OpenAI Whisper API enabled
+🎤 Initializing AudioMonitor with Whisper speech recognition...
+```
+
+### **Not:**
+```
+⚠️  OPENAI_API_KEY not set...
+```
+
+---
+
+## 🚀 Once Fixed - Test Your App
+
+1. Keep terminal running `npx tauri dev`
+2. Open browser: `http://localhost:5173/`
+3. Click: "Start Monitoring All Audio"
+4. Open YouTube (new tab)
+5. Play video with bad words
+6. **Listen for: BEEP! 🔊🔊**
+
+---
+
+## ❓ Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| Still shows "not set" | Try Fix #2 (System variable) |
+| Key copied wrong | Get full key from api-keys page |
+| PowerShell window closed | Open NEW window, set key again |
+| Key has typo | Copy-paste from website, don't type |
+
+---
+
+## 📞 Still Stuck?
+
+1. Read: `FIX_API_KEY_NOT_DETECTED.md` (detailed guide)
+2. Check: Your API key is correct
+3. Try: Fix #2 (System Environment Variable)
+4. Restart: Your computer
+5. Test: In new PowerShell window
+
+---
+
+**Status:** 🔴 API Key Issue
+**Solution:** Above (Try Fix #1, then #2 if needed)
+**Time:** 2-5 minutes to fix
+
+Let me know when you see: `✅ OpenAI Whisper API enabled` ✅

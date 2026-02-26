@@ -1,0 +1,9 @@
+C:\Users\USR-LPTP-81\Desktop\zybertest-desktop\profanity-service\target\debug\deps\ort_sys-8af7b7b2e7eb8c6a.d: C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\lib.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\internal\mod.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\internal\dirs.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\stub.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\version.rs
+
+C:\Users\USR-LPTP-81\Desktop\zybertest-desktop\profanity-service\target\debug\deps\libort_sys-8af7b7b2e7eb8c6a.rmeta: C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\lib.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\internal\mod.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\internal\dirs.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\stub.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\version.rs
+
+C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\lib.rs:
+C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\internal\mod.rs:
+C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\internal\dirs.rs:
+C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\stub.rs:
+C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ort-sys-2.0.0-rc.11\src\version.rs:

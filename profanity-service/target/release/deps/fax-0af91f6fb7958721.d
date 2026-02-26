@@ -1,0 +1,11 @@
+C:\Users\USR-LPTP-81\Desktop\zybertest-desktop\profanity-service\target\release\deps\fax-0af91f6fb7958721.d: C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\lib.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\maps.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\decoder.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\encoder.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\tiff.rs
+
+C:\Users\USR-LPTP-81\Desktop\zybertest-desktop\profanity-service\target\release\deps\libfax-0af91f6fb7958721.rlib: C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\lib.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\maps.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\decoder.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\encoder.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\tiff.rs
+
+C:\Users\USR-LPTP-81\Desktop\zybertest-desktop\profanity-service\target\release\deps\libfax-0af91f6fb7958721.rmeta: C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\lib.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\maps.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\decoder.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\encoder.rs C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\tiff.rs
+
+C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\lib.rs:
+C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\maps.rs:
+C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\decoder.rs:
+C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\encoder.rs:
+C:\Users\USR-LPTP-81\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fax-0.2.6\src\tiff.rs:
