@@ -36,11 +36,11 @@ static RESET_VOSK: AtomicBool = AtomicBool::new(false);
 const MAX_STRIKES: u32 = 3;
 const VOSK_MODEL_PATH: &str = "vosk-model-small-en-us-0.15";
 const NSFW_MODEL_PATH: &str = "nsfw-model.onnx";
-const TCP_PORT: u16 = 5559;
+const TCP_PORT: u16 = 5561;  // TCP logger on 5561
 
 const ENABLE_AUDIO: bool = true;
 const ENABLE_VIDEO: bool = true;  // NSFW detection enabled
-const ZMQ_ENDPOINT: &str = "tcp://127.0.0.1:5559"; // ZMQ PUSH endpoint for C++ agent
+const ZMQ_ENDPOINT: &str = "tcp://127.0.0.1:5559"; // ZMQ PUB endpoint on 5559
 
 fn main() {
     println!("Profanity and NSFW Detection Service Starting...");
