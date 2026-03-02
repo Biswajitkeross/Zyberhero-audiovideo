@@ -17,6 +17,22 @@ use std::time::{Duration, Instant};
 use std::process::Command;
 use std::os::windows::process::CommandExt;
 
+#[cfg(windows)]
+use winapi::um::winuser::{
+    GetForegroundWindow, GetWindowTextW, SetForegroundWindow,
+    EnumWindows, IsWindowVisible,
+    SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP as KEYUP,
+    VK_CONTROL, VK_F4, VK_MENU
+};
+#[cfg(windows)]
+use winapi::shared::windef::HWND;
+#[cfg(windows)]
+use winapi::shared::minwindef::{BOOL, LPARAM, TRUE};
+
+// VK_W is not exported by winapi, define it manually (0x57 = 'W')
+#[cfg(windows)]
+const VK_W: i32 = 0x57;
+
 use audio_capture::WasapiCapture;
 use vosk_recognizer::VoskStream;
 use bad_word_detector::BadWordDetector;
@@ -196,20 +212,31 @@ fn start_video_monitoring(
                 *ldt = Instant::now();
                 drop(ldt);
                 
-                let s = STRIKE_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
-                println!("🚨 VIDEO: {} ({:?}) {:.0}% Strike {}/{}", result.class_name, result.category, result.confidence * 100.0, s, MAX_STRIKES);
-                l.log("NSFW_DETECTED", &format!("{}|{:?}|{:.2}|{}|{}", result.class_name, result.category, result.confidence, s, MAX_STRIKES));
+                println!("🚨 VIDEO: {} ({:?}) {:.0}% - CLOSING APP", result.class_name, result.category, result.confidence * 100.0);
+                l.log("NSFW_DETECTED", &format!("{}|{:?}|{:.2}|CLOSING", result.class_name, result.category, result.confidence));
                 
                 // Send ZMQ alert to C++ agent for video detection
-                zmq.send_video_blocked_alert(&result.class_name, &format!("{:?}", result.category), result.confidence, s, MAX_STRIKES);
+                zmq.send_video_blocked_alert(&result.class_name, &format!("{:?}", result.category), result.confidence, 1, 1);
                 
+                // Show blur overlay
                 if let Some(ref ov) = b {
                     ov.show();
-                    let ovh = ov.clone();
-                    std::thread::spawn(move || { std::thread::sleep(Duration::from_secs(3)); ovh.hide(); });
                 }
                 
-                if s >= MAX_STRIKES { handle_max_strikes(&l, &lt, "VIDEO"); }
+                // Close the app immediately on first detection
+                // For browsers, this closes only the tab; for other apps, it closes the app
+                close_media_apps();
+                l.log("NSFW_APP_CLOSED", "Closed offending application/tab");
+                
+                // Hide blur after a short delay
+                if let Some(ref ov) = b {
+                    let ovh = ov.clone();
+                    std::thread::spawn(move || { std::thread::sleep(Duration::from_secs(2)); ovh.hide(); });
+                }
+                
+                // Reset state
+                { let mut txt = lt.lock(); txt.clear(); }
+                println!("✅ NSFW detection handled - app/tab closed");
             }
         }
     };
@@ -230,14 +257,199 @@ fn handle_max_strikes(logger: &Arc<TcpLogger>, last_text: &Arc<parking_lot::Mute
 }
 
 fn close_media_apps() {
-    let apps = [
-        ("chrome.exe", "Chrome"), ("msedge.exe", "Edge"), ("firefox.exe", "Firefox"),
-        ("spotify.exe", "Spotify"), ("vlc.exe", "VLC"), ("wmplayer.exe", "WMP"),
-        ("potplayer.exe", "PotPlayer"), ("mpc-hc64.exe", "MPC"),
+    // Check if any browser is the foreground window - close only the tab
+    if close_browser_tab_if_active() {
+        println!("  ✓ Closed browser tab (Ctrl+W)");
+        return;
+    }
+    
+    // If not a browser, try to close the foreground media app with Alt+F4
+    // This is gentler than taskkill and works for most media players
+    let hwnd_title = get_foreground_window_title();
+    let media_keywords = ["vlc", "spotify", "potplayer", "mpc", "media player", "video", "movie"];
+    
+    if media_keywords.iter().any(|k| hwnd_title.contains(k)) {
+        close_foreground_app();
+        println!("  ✓ Closed media app (Alt+F4): {}", hwnd_title);
+        return;
+    }
+    
+    // Fallback: kill known media app processes
+    let media_apps = [
+        ("vlc.exe", "VLC"), ("potplayer.exe", "PotPlayer"), 
+        ("mpc-hc64.exe", "MPC"), ("mpc-hc.exe", "MPC"),
     ];
-    for (p, n) in apps {
+    for (p, n) in media_apps {
         if let Ok(o) = Command::new("taskkill").args(["/F", "/IM", p]).creation_flags(CREATE_NO_WINDOW).output() {
-            if o.status.success() { println!("  Closed {}", n); }
+            if o.status.success() { println!("  ✓ Killed {}", n); }
         }
     }
+}
+
+/// Get the title of the foreground window
+#[cfg(windows)]
+fn get_foreground_window_title() -> String {
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() { return String::new(); }
+        
+        let mut title: [u16; 256] = [0; 256];
+        let len = GetWindowTextW(hwnd, title.as_mut_ptr(), 256);
+        if len == 0 { return String::new(); }
+        
+        String::from_utf16_lossy(&title[..len as usize]).to_lowercase()
+    }
+}
+
+#[cfg(not(windows))]
+fn get_foreground_window_title() -> String {
+    String::new()
+}
+
+/// Browser window patterns for detection
+const BROWSER_PATTERNS: &[&str] = &[
+    "chrome", "edge", "firefox", "opera", "brave", "vivaldi", "chromium",
+    "mozilla", "google chrome", "microsoft edge", "youtube", "netflix",
+    "twitch", "vimeo", "dailymotion"
+];
+
+/// Callback data for EnumWindows
+#[cfg(windows)]
+struct BrowserFinder {
+    found_hwnd: HWND,
+}
+
+/// EnumWindows callback to find a browser window
+#[cfg(windows)]
+unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    if IsWindowVisible(hwnd) == 0 {
+        return TRUE; // Continue enumeration
+    }
+    
+    let mut title: [u16; 256] = [0; 256];
+    let len = GetWindowTextW(hwnd, title.as_mut_ptr(), 256);
+    if len == 0 {
+        return TRUE;
+    }
+    
+    let title_str = String::from_utf16_lossy(&title[..len as usize]).to_lowercase();
+    
+    // Check if it's a browser
+    if BROWSER_PATTERNS.iter().any(|b| title_str.contains(b)) {
+        let finder = &mut *(lparam as *mut BrowserFinder);
+        finder.found_hwnd = hwnd;
+        return 0; // Stop enumeration - found a browser
+    }
+    
+    TRUE // Continue enumeration
+}
+
+/// Find any browser window (not just foreground) and close its tab with Ctrl+W
+#[cfg(windows)]
+fn close_browser_tab_if_active() -> bool {
+    unsafe {
+        // First try foreground window
+        let fg_hwnd = GetForegroundWindow();
+        if !fg_hwnd.is_null() {
+            let mut title: [u16; 256] = [0; 256];
+            let len = GetWindowTextW(fg_hwnd, title.as_mut_ptr(), 256);
+            if len > 0 {
+                let title_str = String::from_utf16_lossy(&title[..len as usize]).to_lowercase();
+                if BROWSER_PATTERNS.iter().any(|b| title_str.contains(b)) {
+                    println!("  🌐 Browser in foreground: {}", &title_str[..title_str.len().min(50)]);
+                    send_key_combo_ctrl_w();
+                    std::thread::sleep(Duration::from_millis(200));
+                    return true;
+                }
+            }
+        }
+        
+        // Search all windows for a browser
+        let mut finder = BrowserFinder { found_hwnd: std::ptr::null_mut() };
+        EnumWindows(Some(enum_windows_callback), &mut finder as *mut _ as LPARAM);
+        
+        if !finder.found_hwnd.is_null() {
+            let mut title: [u16; 256] = [0; 256];
+            let len = GetWindowTextW(finder.found_hwnd, title.as_mut_ptr(), 256);
+            let title_str = if len > 0 {
+                String::from_utf16_lossy(&title[..len as usize])
+            } else {
+                String::from("Browser")
+            };
+            
+            println!("  🌐 Found browser window: {}", &title_str[..title_str.len().min(50)]);
+            
+            // Bring browser to foreground
+            SetForegroundWindow(finder.found_hwnd);
+            std::thread::sleep(Duration::from_millis(150));
+            
+            // Send Ctrl+W to close the tab
+            send_key_combo_ctrl_w();
+            std::thread::sleep(Duration::from_millis(200));
+            return true;
+        }
+        
+        false
+    }
+}
+
+#[cfg(not(windows))]
+fn close_browser_tab_if_active() -> bool {
+    false
+}
+
+/// Helper to create a keyboard INPUT struct
+#[cfg(windows)]
+fn make_key_input(vk: u16, flags: u32) -> INPUT {
+    let mut input: INPUT = unsafe { std::mem::zeroed() };
+    input.type_ = INPUT_KEYBOARD;
+    unsafe {
+        let ki = input.u.ki_mut();
+        ki.wVk = vk;
+        ki.dwFlags = flags;
+    }
+    input
+}
+
+/// Send Ctrl+W keystroke to close browser tab using SendInput (more reliable)
+#[cfg(windows)]
+fn send_key_combo_ctrl_w() {
+    unsafe {
+        let mut inputs = [
+            make_key_input(VK_CONTROL as u16, 0),           // Ctrl down
+            make_key_input(VK_W as u16, 0),                 // W down
+            make_key_input(VK_W as u16, KEYUP),             // W up
+            make_key_input(VK_CONTROL as u16, KEYUP),       // Ctrl up
+        ];
+        
+        SendInput(
+            inputs.len() as u32,
+            inputs.as_mut_ptr(),
+            std::mem::size_of::<INPUT>() as i32
+        );
+    }
+}
+
+/// Close application using Alt+F4 (for non-browser media apps)
+#[cfg(windows)]
+fn close_foreground_app() {
+    unsafe {
+        let mut inputs = [
+            make_key_input(VK_MENU as u16, 0),              // Alt down
+            make_key_input(VK_F4 as u16, 0),                // F4 down
+            make_key_input(VK_F4 as u16, KEYUP),            // F4 up
+            make_key_input(VK_MENU as u16, KEYUP),          // Alt up
+        ];
+        
+        SendInput(
+            inputs.len() as u32,
+            inputs.as_mut_ptr(),
+            std::mem::size_of::<INPUT>() as i32
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn close_foreground_app() {
+    // No-op on non-Windows
 }
