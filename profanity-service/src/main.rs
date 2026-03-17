@@ -468,23 +468,26 @@ mod nsfw_detector;
 mod blur_overlay;
 mod zmq_alert_sender;
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::process::Command;
 use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
 use winapi::um::winuser::{
     GetForegroundWindow, GetWindowTextW, SetForegroundWindow,
-    EnumWindows, IsWindowVisible,
+    EnumWindows, IsWindowVisible, GetWindowThreadProcessId,
     SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP as KEYUP,
-    VK_CONTROL, VK_F4, VK_MENU
+    VK_CONTROL, VK_F4, VK_MENU,
+    AttachThreadInput, PostMessageW, WM_KEYDOWN, WM_KEYUP,
 };
 #[cfg(windows)]
 use winapi::shared::windef::HWND;
 #[cfg(windows)]
-use winapi::shared::minwindef::{BOOL, LPARAM, TRUE};
+use winapi::shared::minwindef::{BOOL, LPARAM, WPARAM, TRUE};
+#[cfg(windows)]
+use winapi::um::processthreadsapi::GetCurrentThreadId;
 
 // VK_W is not exported by winapi, define it manually (0x57 = 'W')
 #[cfg(windows)]
@@ -505,6 +508,9 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 static RUNNING: AtomicBool = AtomicBool::new(true);
 static STRIKE_COUNT: AtomicU32 = AtomicU32::new(0);
 static RESET_VOSK: AtomicBool = AtomicBool::new(false);
+static POST_CLOSE_COOLDOWN: AtomicBool = AtomicBool::new(false);
+// Timestamp (epoch millis) when cooldown ended — used for grace period
+static COOLDOWN_ENDED_AT: AtomicU64 = AtomicU64::new(0);
 
 const MAX_STRIKES: u32 = 3;
 const VOSK_MODEL_PATH: &str = "vosk-model-small-en-us-0.15";
@@ -598,36 +604,110 @@ fn start_audio_monitoring(
     let lt = last_text.clone();
     let zmq = zmq_sender.clone();
     
+    // Track last bad-word root that already triggered a strike,
+    // so the same word in partial→final doesn't double-count.
+    let last_strike_root = Arc::new(parking_lot::Mutex::new(String::new()));
+    let lsr = last_strike_root.clone();
+    
     let cb = move |samples: Vec<i16>| {
         if !RUNNING.load(Ordering::SeqCst) { return; }
         
+        // Skip all processing during post-close cooldown (prevents leftover audio)
+        if POST_CLOSE_COOLDOWN.load(Ordering::SeqCst) { return; }
+        
+        // Grace period: ignore all results for 3s AFTER cooldown ended
+        // This catches stale FINAL results from Vosk's internal buffer
+        let cooldown_ended = COOLDOWN_ENDED_AT.load(Ordering::SeqCst);
+        if cooldown_ended > 0 {
+            let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+            if now_ms < cooldown_ended + 3000 {
+                // Still in grace period — feed audio to Vosk (so it flushes) but ignore results
+                let mut vg = v.lock();
+                let _ = vg.process_audio(&samples);
+                return;
+            }
+            // Grace period over, clear the timestamp
+            COOLDOWN_ENDED_AT.store(0, Ordering::SeqCst);
+        }
+        
         let mut vg = v.lock();
-        if let Some(text) = vg.process_audio(&samples) {
-            if text.is_empty() { return; }
+        if let Some((text, is_final)) = vg.process_audio(&samples) {
+            // Filter out [unk] tokens before any processing
+            let clean_text: String = text.split_whitespace()
+                .filter(|w| *w != "[unk]")
+                .collect::<Vec<_>>()
+                .join(" ");
+            if clean_text.is_empty() { return; }
             
+            // Dedup: skip if identical to last text
             {
                 let mut last = lt.lock();
-                if *last == text { return; }
-                *last = text.clone();
+                if *last == clean_text { return; }
+                *last = clean_text.clone();
             }
             
-            let bw = d.detect_all_bad_words(&text);
-            if !bw.is_empty() {
-                let mut ldt = ld.lock();
-                if ldt.elapsed() < Duration::from_millis(500) { return; }
-                *ldt = Instant::now();
-                drop(ldt);
+            let bw = d.detect_all_bad_words(&clean_text);
+            
+            if is_final {
+                // === FINAL RESULT ===
+                println!("  [vosk:FINAL] \"{}\"", clean_text);
                 
-                let s = STRIKE_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
-                let w = bw.first().unwrap();
-                println!("AUDIO: '{}' Strike {}/{}", w, s, MAX_STRIKES);
-                l.log("BAD_WORD", &format!("{}|{}|{}", w, s, MAX_STRIKES));
-                a.beep();
-                
-                // Send ZMQ alert to C++ agent
-                zmq.send_audio_blocked_alert(w, s, MAX_STRIKES);
-                
-                if s >= MAX_STRIKES { handle_max_strikes(&l, &lt, "AUDIO"); }
+                if !bw.is_empty() {
+                    let w = bw.first().unwrap();
+                    let root = bad_word_detector::BadWordDetector::normalize_to_root(w).to_string();
+                    
+                    // If partial already triggered a strike for this same root, skip
+                    let mut last_root = lsr.lock();
+                    if *last_root == root {
+                        // Already counted from partial — just clear and move on
+                        *last_root = String::new();
+                        return;
+                    }
+                    *last_root = String::new();
+                    drop(last_root);
+                    
+                    // Cooldown: skip if last detection was < 2s ago
+                    let mut ldt = ld.lock();
+                    if ldt.elapsed() < Duration::from_secs(2) { return; }
+                    *ldt = Instant::now();
+                    drop(ldt);
+                    
+                    let s = STRIKE_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+                    println!("🚨 BAD WORD: '{}' (root: {}) — Strike {}/{}", w, root, s, MAX_STRIKES);
+                    l.log("BAD_WORD", &format!("{}|{}|{}", w, s, MAX_STRIKES));
+                    a.beep();
+                    zmq.send_audio_blocked_alert(w, s, MAX_STRIKES);
+                    
+                    if s >= MAX_STRIKES { handle_max_strikes(&l, &lt, "AUDIO"); }
+                } else {
+                    // Clean final — clear any partial tracking
+                    *lsr.lock() = String::new();
+                }
+            } else {
+                // === PARTIAL RESULT — instant strike on bad word ===
+                if !bw.is_empty() {
+                    let w = bw.first().unwrap();
+                    let root = bad_word_detector::BadWordDetector::normalize_to_root(w).to_string();
+                    println!("  [vosk:partial] \"{}\" ⚠️ BAD: {}", clean_text, w);
+                    
+                    // Cooldown: skip if last detection was < 2s ago
+                    let mut ldt = ld.lock();
+                    if ldt.elapsed() < Duration::from_secs(2) { return; }
+                    *ldt = Instant::now();
+                    drop(ldt);
+                    
+                    // Mark this root so the upcoming FINAL doesn't double-count
+                    *lsr.lock() = root.clone();
+                    
+                    let s = STRIKE_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+                    println!("🚨 BAD WORD: '{}' (root: {}) — Strike {}/{}", w, root, s, MAX_STRIKES);
+                    l.log("BAD_WORD", &format!("{}|{}|{}", w, s, MAX_STRIKES));
+                    a.beep();
+                    zmq.send_audio_blocked_alert(w, s, MAX_STRIKES);
+                    
+                    if s >= MAX_STRIKES { handle_max_strikes(&l, &lt, "AUDIO"); }
+                }
+                // Don't print clean partials (too noisy)
             }
         }
     };
@@ -713,14 +793,27 @@ fn start_video_monitoring(
 }
 
 fn handle_max_strikes(logger: &Arc<TcpLogger>, last_text: &Arc<parking_lot::Mutex<String>>, source: &str) {
-    println!("MAX STRIKES ({}) - Closing apps...", source);
+    println!("🛑 MAX STRIKES ({}) - Closing apps...", source);
     logger.log("MAX_STRIKES", &format!("Triggered by {}", source));
+    
+    // Enable cooldown BEFORE closing — blocks audio callback from processing leftover buffers
+    POST_CLOSE_COOLDOWN.store(true, Ordering::SeqCst);
+    
     close_media_apps();
     logger.log("APPS_CLOSED", "Media apps terminated");
     STRIKE_COUNT.store(0, Ordering::SeqCst);
     RESET_VOSK.store(true, Ordering::SeqCst);
     { let mut l = last_text.lock(); l.clear(); }
-    println!("State reset");
+    
+    // Post-close cooldown — wait for audio buffers to drain, then re-enable detection
+    std::thread::sleep(Duration::from_secs(5));
+    
+    // Set grace period timestamp BEFORE clearing cooldown flag
+    let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+    COOLDOWN_ENDED_AT.store(now_ms, Ordering::SeqCst);
+    POST_CLOSE_COOLDOWN.store(false, Ordering::SeqCst);
+    
+    println!("✅ State reset — ready for new session");
     logger.log("STATE_RESET", "Ready for new session");
 }
 
@@ -812,51 +905,121 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
     TRUE // Continue enumeration
 }
 
-/// Find any browser window (not just foreground) and close its tab with Ctrl+W
+/// Find any browser window (not just foreground) and close its tab with Ctrl+W.
+/// Uses SendInput first, then PostMessage as fallback.
+/// NEVER kills the entire browser — only closes the active tab.
 #[cfg(windows)]
 fn close_browser_tab_if_active() -> bool {
     unsafe {
+        let mut target_hwnd: HWND = std::ptr::null_mut();
+        let mut title_str = String::new();
+
         // First try foreground window
         let fg_hwnd = GetForegroundWindow();
         if !fg_hwnd.is_null() {
             let mut title: [u16; 256] = [0; 256];
             let len = GetWindowTextW(fg_hwnd, title.as_mut_ptr(), 256);
             if len > 0 {
-                let title_str = String::from_utf16_lossy(&title[..len as usize]).to_lowercase();
-                if BROWSER_PATTERNS.iter().any(|b| title_str.contains(b)) {
-                    println!("  🌐 Browser in foreground: {}", &title_str[..title_str.len().min(50)]);
-                    send_key_combo_ctrl_w();
-                    std::thread::sleep(Duration::from_millis(200));
-                    return true;
+                let t = String::from_utf16_lossy(&title[..len as usize]).to_lowercase();
+                if BROWSER_PATTERNS.iter().any(|b| t.contains(b)) {
+                    target_hwnd = fg_hwnd;
+                    title_str = t;
                 }
             }
         }
-        
-        // Search all windows for a browser
-        let mut finder = BrowserFinder { found_hwnd: std::ptr::null_mut() };
-        EnumWindows(Some(enum_windows_callback), &mut finder as *mut _ as LPARAM);
-        
-        if !finder.found_hwnd.is_null() {
-            let mut title: [u16; 256] = [0; 256];
-            let len = GetWindowTextW(finder.found_hwnd, title.as_mut_ptr(), 256);
-            let title_str = if len > 0 {
-                String::from_utf16_lossy(&title[..len as usize])
-            } else {
-                String::from("Browser")
-            };
-            
-            println!("  🌐 Found browser window: {}", &title_str[..title_str.len().min(50)]);
-            
-            // Bring browser to foreground
-            SetForegroundWindow(finder.found_hwnd);
-            std::thread::sleep(Duration::from_millis(150));
-            
-            // Send Ctrl+W to close the tab
-            send_key_combo_ctrl_w();
-            std::thread::sleep(Duration::from_millis(200));
+
+        // If foreground isn't a browser, search all windows
+        if target_hwnd.is_null() {
+            let mut finder = BrowserFinder { found_hwnd: std::ptr::null_mut() };
+            EnumWindows(Some(enum_windows_callback), &mut finder as *mut _ as LPARAM);
+            if !finder.found_hwnd.is_null() {
+                target_hwnd = finder.found_hwnd;
+                let mut title: [u16; 256] = [0; 256];
+                let len = GetWindowTextW(target_hwnd, title.as_mut_ptr(), 256);
+                title_str = if len > 0 {
+                    String::from_utf16_lossy(&title[..len as usize]).to_lowercase()
+                } else {
+                    String::from("browser")
+                };
+            }
+        }
+
+        if target_hwnd.is_null() {
+            println!("  ❌ No browser window found");
+            return false;
+        }
+
+        println!("  🌐 Browser: {}", &title_str[..title_str.len().min(60)]);
+
+        // --- Attempt 1: Attach + Focus + SendInput Ctrl+W ---
+        let target_tid = GetWindowThreadProcessId(target_hwnd, std::ptr::null_mut());
+        let our_tid = GetCurrentThreadId();
+        let attached = target_tid != 0 && target_tid != our_tid;
+        if attached {
+            AttachThreadInput(our_tid, target_tid, 1);
+        }
+        SetForegroundWindow(target_hwnd);
+        std::thread::sleep(Duration::from_millis(200));
+        send_key_combo_ctrl_w();
+        std::thread::sleep(Duration::from_millis(600));
+        if attached {
+            AttachThreadInput(our_tid, target_tid, 0);
+        }
+
+        // Check if the tab closed (title changed or window gone)
+        let mut title_after: [u16; 256] = [0; 256];
+        let len_after = GetWindowTextW(target_hwnd, title_after.as_mut_ptr(), 256);
+        if len_after == 0 {
+            println!("  ✓ Tab closed (window gone)");
             return true;
         }
-        
+        let after = String::from_utf16_lossy(&title_after[..len_after as usize]).to_lowercase();
+        if after != title_str {
+            println!("  ✓ Tab closed (title changed)");
+            return true;
+        }
+
+        // --- Attempt 2: PostMessage Ctrl+W ---
+        println!("  ⚠️ Attempt 1 didn't work, trying PostMessage Ctrl+W...");
+        PostMessageW(target_hwnd, WM_KEYDOWN, VK_CONTROL as WPARAM, 0);
+        PostMessageW(target_hwnd, WM_KEYDOWN, VK_W as WPARAM, 0);
+        std::thread::sleep(Duration::from_millis(100));
+        PostMessageW(target_hwnd, WM_KEYUP, VK_W as WPARAM, 0);
+        PostMessageW(target_hwnd, WM_KEYUP, VK_CONTROL as WPARAM, 0);
+        std::thread::sleep(Duration::from_millis(600));
+
+        let mut title_after2: [u16; 256] = [0; 256];
+        let len_after2 = GetWindowTextW(target_hwnd, title_after2.as_mut_ptr(), 256);
+        if len_after2 == 0 {
+            println!("  ✓ Tab closed via PostMessage (window gone)");
+            return true;
+        }
+        let after2 = String::from_utf16_lossy(&title_after2[..len_after2 as usize]).to_lowercase();
+        if after2 != title_str {
+            println!("  ✓ Tab closed via PostMessage (title changed)");
+            return true;
+        }
+
+        // --- Attempt 3: Retry SendInput Ctrl+W (focus may have been slow) ---
+        println!("  ⚠️ Attempt 2 didn't work, retrying SendInput Ctrl+W...");
+        SetForegroundWindow(target_hwnd);
+        std::thread::sleep(Duration::from_millis(300));
+        send_key_combo_ctrl_w();
+        std::thread::sleep(Duration::from_millis(600));
+
+        let mut title_after3: [u16; 256] = [0; 256];
+        let len_after3 = GetWindowTextW(target_hwnd, title_after3.as_mut_ptr(), 256);
+        if len_after3 == 0 {
+            println!("  ✓ Tab closed on retry (window gone)");
+            return true;
+        }
+        let after3 = String::from_utf16_lossy(&title_after3[..len_after3 as usize]).to_lowercase();
+        if after3 != title_str {
+            println!("  ✓ Tab closed on retry (title changed)");
+            return true;
+        }
+
+        println!("  ❌ Could not close tab after 3 attempts (browser still open, tab preserved)");
         false
     }
 }

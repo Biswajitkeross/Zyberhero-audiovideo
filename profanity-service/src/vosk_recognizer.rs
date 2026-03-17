@@ -1,6 +1,10 @@
-//! Vosk Speech Recognizer - Streaming Recognition
+//! Vosk Speech Recognizer — Bad words + filler grammar.
+//!
+//! Grammar contains bad words + common filler words + [unk].
+//! Filler words give Vosk clean options so it doesn't force normal music into
+//! bad words. NO sound-alike words (no fog, frog, ship, beach, etc.).
 
-use vosk::{Model, Recognizer};
+use vosk::{Model, Recognizer, DecodingState};
 use std::path::Path;
 
 /// Streaming recognizer that processes audio chunks in real-time
@@ -12,10 +16,9 @@ impl VoskStream {
     pub fn new(model_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         const SAMPLE_RATE: f32 = 16000.0;
         
-        // Check model exists
         if !Path::new(model_path).exists() {
             return Err(format!(
-                "Vosk model not found at '{}'. Please download from https://alphacephei.com/vosk/models",
+                "Vosk model not found at '{}'. Download from https://alphacephei.com/vosk/models",
                 model_path
             ).into());
         }
@@ -24,39 +27,37 @@ impl VoskStream {
         let model = Model::new(model_path)
             .ok_or("Failed to load Vosk model")?;
         
-        // HYBRID APPROACH: Grammar with bad words + common similar-sounding words
+        // Bad words + filler words + [unk].
+        // Only removed nigga/nigger — they cause false positives on
+        // non-English music (Hindi kids' songs etc.).
         let grammar: &[&str] = &[
-            // === BAD WORDS (what we want to detect) ===
-            "fuck", "fucking", "fucker", "fucked", "fucks", "motherfucker",
-            "shit", "shitting", "shitty", "bullshit",
-            "bitch", "bitches", "bitchy", "bitching",
-            "ass", "asshole", "dumbass", "badass", "jackass",
-            "damn", "dammit", "goddamn", "damned",
-            "crap", "crappy", "hell", "bastard", "bastards",
-            "dick", "dicks", "pussy", "cunt",
-            "idiot", "idiots", "stupid", "dumb",
-            
-            // === SIMILAR SOUNDING CLEAN WORDS (to reduce false positives) ===
-            "frog", "flog", "flood", "fog", "folk", "for", "four", "floor",
-            "fork", "fort", "form", "force", "ford", "fore",
-            "ship", "shift", "sheet", "shoot", "shot", "shop", "short", "show",
-            "shut", "shed", "shell", "shelf", "shield",
-            "beach", "bench", "batch", "pitch", "witch", "ditch", "rich", "which",
-            "hitch", "switch", "stitch", "twitch",
-            "as", "ask", "asked", "class", "glass", "pass", "fast", "last", "past",
-            
-            // Common filler words for context
-            "i", "i'm", "you", "your", "the", "a", "an", "this", "that", "is", "are",
-            "my", "me", "we", "on", "in", "to", "of", "and", "or", "but", "so",
-            "way", "day", "game", "time", "go", "get", "got", "know", "no", "yes",
-            "oh", "what", "how", "why", "when", "where", "who", "all", "just",
-            "like", "it", "it's", "be", "been", "being", "have", "has", "had",
-            "do", "don't", "does", "did", "will", "would", "could", "should",
-            "can", "can't", "not", "with", "from", "at", "by", "about", "up",
-            "out", "down", "off", "over", "under", "back", "here", "there",
-            "now", "then", "good", "bad", "right", "wrong", "new", "old",
-            
-            "[unk]"  // Unknown words fallback
+            // === BAD WORDS ===
+            "fuck", "fucking", "fucker", "fucked", "fock",
+            "shit",
+            "bitch",
+            "suck",
+            "slut", "asshole",
+            "dick",
+
+            // === FILLER WORDS (~70 — absorb normal music vocals) ===
+            "the", "a", "i", "you", "he", "she", "we", "they", "it",
+            "me", "my", "your", "his", "her",
+            "is", "are", "was", "be", "have", "has", "had",
+            "do", "did", "will", "would", "can", "could",
+            "not", "no", "yes",
+            "and", "or", "but", "so", "if",
+            "in", "on", "at", "to", "of", "with", "by", "up", "out",
+            "for", "from",
+            "this", "that", "what", "how", "all", "just", "like",
+            "know", "go", "get", "got", "come", "make", "take",
+            "see", "say", "want", "need",
+            "love", "baby", "yeah", "oh",
+            "here", "there", "now", "time", "day", "way",
+            "right", "good", "back", "down",
+            "don't", "it's", "i'm",
+            "let", "man",
+
+            "[unk]"
         ];
         
         let recognizer = Recognizer::new_with_grammar(&model, SAMPLE_RATE, grammar)
@@ -66,28 +67,48 @@ impl VoskStream {
             })
             .ok_or("Failed to create Vosk recognizer")?;
         
-        println!("✅ Vosk recognizer ready (hybrid grammar mode)");
+        println!("✅ Vosk recognizer ready ({} grammar words)", grammar.len());
         
         Ok(Self { recognizer })
     }
 
-    /// Feed audio samples and get partial result
-    pub fn process_audio(&mut self, samples: &[i16]) -> Option<String> {
-        // Feed to recognizer
-        self.recognizer.accept_waveform(samples);
+    /// Feed audio samples and return text from BOTH partial and finalized results.
+    /// Partial results give instant detection; finalized results confirm.
+    /// Returns (text, is_final).
+    pub fn process_audio(&mut self, samples: &[i16]) -> Option<(String, bool)> {
+        let state = self.recognizer.accept_waveform(samples);
         
-        // Get partial result (real-time hypothesis)
-        let partial_result = self.recognizer.partial_result();
-        let partial_text = partial_result.partial;
-        
-        if !partial_text.is_empty() {
-            return Some(partial_text.to_string());
+        match state {
+            DecodingState::Finalized => {
+                let result = self.recognizer.result();
+                let text = match &result {
+                    vosk::CompleteResult::Single(s) => s.text.to_string(),
+                    vosk::CompleteResult::Multiple(m) => {
+                        m.alternatives.first()
+                            .map(|a| a.text.to_string())
+                            .unwrap_or_default()
+                    }
+                };
+                let text = text.trim().to_string();
+                if text.is_empty() || text == "[unk]" {
+                    return None;
+                }
+                Some((text, true))
+            },
+            DecodingState::Running => {
+                // Partial result — check for bad words instantly
+                let partial = self.recognizer.partial_result();
+                let text = partial.partial.trim().to_string();
+                if text.is_empty() || text == "[unk]" {
+                    return None;
+                }
+                Some((text, false))
+            },
+            DecodingState::Failed => None,
         }
-        
-        None
     }
 
-    /// Reset the recognizer
+    /// Reset the recognizer state
     pub fn reset(&mut self) {
         let _ = self.recognizer.final_result();
     }
