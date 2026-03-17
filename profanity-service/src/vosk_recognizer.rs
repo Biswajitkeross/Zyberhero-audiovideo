@@ -32,12 +32,14 @@ impl VoskStream {
         // non-English music (Hindi kids' songs etc.).
         let grammar: &[&str] = &[
             // === BAD WORDS ===
-            "fuck", "fucking", "fucker", "fucked", "fock",
+            "fuck", "fucking", "fucker", "fucked",
             "shit",
             "bitch",
             "suck",
             "slut", "asshole",
             "dick",
+            // Sound-alike traps (Vosk may hear "fuck" as these)
+            "folk", "fog",
 
             // === FILLER WORDS (~70 — absorb normal music vocals) ===
             "the", "a", "i", "you", "he", "she", "we", "they", "it",

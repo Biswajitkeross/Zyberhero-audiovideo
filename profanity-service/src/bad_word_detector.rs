@@ -15,8 +15,8 @@ impl BadWordDetector {
         // Bad words for detection. Only removed nigga/nigger — they cause
         // false positives on non-English music (Hindi kids' songs etc.).
         let words: HashSet<&'static str> = [
-            // F-word family (including "fock" — Vosk mishearing of fuck)
-            "fuck", "fucking", "fucker", "fucked", "fock",
+            // F-word family + sound-alikes (Vosk may hear "fuck" as folk/fog)
+            "fuck", "fucking", "fucker", "fucked", "folk", "fog",
             // S-word
             "shit",
             // B-word
@@ -33,7 +33,7 @@ impl BadWordDetector {
     /// Normalize a word to its root for strike dedup.
     pub fn normalize_to_root(word: &str) -> &'static str {
         let w = word.to_lowercase();
-        if w.starts_with("fuck") || w == "fock"         { return "fuck"; }
+        if w.starts_with("fuck") || w == "folk" || w == "fog" { return "fuck"; }
         if w == "shit"                                  { return "shit"; }
         if w.starts_with("bitch")                       { return "bitch"; }
         if w.starts_with("suck")                        { return "suck"; }
